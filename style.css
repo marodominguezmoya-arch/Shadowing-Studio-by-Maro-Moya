@@ -447,3 +447,36 @@ footer {
 }
 footer a { color: var(--faint); text-decoration: underline; text-underline-offset: 3px; }
 footer a:hover { color: var(--muted); }
+
+/* ── Recording badge ── */
+.recording-badge {
+  display: flex; align-items: center; gap: 7px;
+  font-size: 11px; font-weight: 600; color: var(--danger);
+  padding: 5px 10px; border-radius: 20px;
+  background: var(--dan-bg); border: 1px solid var(--danger);
+  width: fit-content;
+}
+.rec-dot {
+  width: 8px; height: 8px; border-radius: 50%;
+  background: var(--danger);
+  animation: blink 1s ease-in-out infinite;
+}
+@keyframes blink { 0%,100%{opacity:1} 50%{opacity:.2} }
+
+/* ── Download button ── */
+.download-wrap {
+  display: flex; flex-direction: column; gap: 5px;
+}
+.btn-download {
+  display: inline-flex; align-items: center; gap: 8px;
+  padding: 10px 16px; border-radius: var(--radius);
+  background: var(--green-bg); color: var(--green);
+  border: 1px solid var(--green);
+  font-size: 13px; font-weight: 700; text-decoration: none;
+  transition: opacity .15s; width: fit-content;
+}
+.btn-download:hover { opacity: .8; }
+.btn-download svg { flex-shrink: 0; }
+.download-note {
+  font-size: 10px; color: var(--faint); padding-left: 2px;
+}

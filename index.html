@@ -238,6 +238,21 @@
         </button>
         <button class="btn-secondary" id="stopBtn">Stop</button>
       </div>
+
+      <div id="recordingBadge" class="recording-badge hidden">
+        <span class="rec-dot"></span> Recording…
+      </div>
+
+      <div id="downloadWrap" class="download-wrap hidden">
+        <a id="downloadBtn" class="btn-download" href="#" download>
+          <svg width="13" height="13" viewBox="0 0 13 13" fill="currentColor">
+            <path d="M6.5 9.5L2 5h3V1h3v4h3L6.5 9.5z"/>
+            <rect x="1" y="11" width="11" height="1.5" rx=".75"/>
+          </svg>
+          Download session audio
+        </a>
+        <p class="download-note">WebM format · opens in any modern browser or VLC</p>
+      </div>
       <button class="btn-link" id="resetBtn">← New session</button>
     </div>
 
