@@ -9,9 +9,6 @@
   <meta name="theme-color" content="#1a6bc4"/>
   <link rel="stylesheet" href="style.css"/>
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><circle cx='16' cy='16' r='7' fill='%231a6bc4'/><circle cx='16' cy='16' r='13' stroke='%231a6bc4' stroke-width='2' fill='none' opacity='.4'/></svg>"/>
-
-  <!-- meSpeak: in-browser TTS → real WAV, no server, no API, no CORS -->
-  <script src="https://cdn.jsdelivr.net/npm/mespeak@2.0.2/src/mespeak.js"></script>
 </head>
 <body>
 
@@ -23,7 +20,7 @@
     </svg>
   </div>
   <h1>Shadowing Studio</h1>
-  <span class="header-tag">Free · No API needed</span>
+  <span class="header-tag">Free · No install needed</span>
   <div class="header-right">
     <div class="api-wrap">
       <label for="apiKey">Claude API key</label>
@@ -42,62 +39,88 @@
       placeholder="One phrase per line…&#10;&#10;The quick brown fox&#10;Je voudrais un café&#10;Merhaba, nasılsın?"></textarea>
     <div class="counter-row">
       <span id="counter" class="counter">0 phrases</span>
-      <span class="counter-hint">Ctrl+Enter to start</span>
+      <span class="counter-hint">Ctrl+Enter to play</span>
     </div>
 
     <div class="ctrl">
       <label for="langSel">Language</label>
       <select id="langSel">
         <optgroup label="Español">
-          <option value="es">🇪🇸 Español</option>
+          <option value="es-ES">🇪🇸 Español (España)</option>
+          <option value="es-MX">🇲🇽 Español (México)</option>
+          <option value="es-AR">🇦🇷 Español (Argentina)</option>
+          <option value="es-CO">🇨🇴 Español (Colombia)</option>
         </optgroup>
         <optgroup label="English">
-          <option value="en" selected>🇺🇸 English</option>
+          <option value="en-US">🇺🇸 English (US)</option>
+          <option value="en-GB">🇬🇧 English (UK)</option>
+          <option value="en-AU">🇦🇺 English (Australia)</option>
+          <option value="en-IN">🇮🇳 English (India)</option>
         </optgroup>
         <optgroup label="Français">
-          <option value="fr">🇫🇷 Français</option>
+          <option value="fr-FR">🇫🇷 Français (France)</option>
+          <option value="fr-CA">🇨🇦 Français (Canada)</option>
+          <option value="fr-BE">🇧🇪 Français (Belgique)</option>
         </optgroup>
         <optgroup label="Europe occidentale">
-          <option value="de">🇩🇪 Deutsch</option>
-          <option value="it">🇮🇹 Italiano</option>
-          <option value="pt">🇵🇹 Português</option>
-          <option value="nl">🇳🇱 Nederlands</option>
+          <option value="de-DE">🇩🇪 Deutsch</option>
+          <option value="de-AT">🇦🇹 Deutsch (Österreich)</option>
+          <option value="it-IT">🇮🇹 Italiano</option>
+          <option value="pt-PT">🇵🇹 Português (Portugal)</option>
+          <option value="pt-BR">🇧🇷 Português (Brasil)</option>
+          <option value="nl-NL">🇳🇱 Nederlands</option>
+          <option value="ca-ES">Català</option>
         </optgroup>
         <optgroup label="Europe du Nord">
-          <option value="sv">🇸🇪 Svenska</option>
-          <option value="fi">🇫🇮 Suomi</option>
-          <option value="da">🇩🇰 Dansk</option>
-          <option value="nb">🇳🇴 Norsk</option>
+          <option value="sv-SE">🇸🇪 Svenska</option>
+          <option value="nb-NO">🇳🇴 Norsk Bokmål</option>
+          <option value="da-DK">🇩🇰 Dansk</option>
+          <option value="fi-FI">🇫🇮 Suomi</option>
         </optgroup>
         <optgroup label="Europe de l'Est">
-          <option value="pl">🇵🇱 Polski</option>
-          <option value="cs">🇨🇿 Čeština</option>
-          <option value="ro">🇷🇴 Română</option>
-          <option value="hu">🇭🇺 Magyar</option>
-          <option value="ru">🇷🇺 Русский</option>
-          <option value="el">🇬🇷 Ελληνικά</option>
+          <option value="pl-PL">🇵🇱 Polski</option>
+          <option value="cs-CZ">🇨🇿 Čeština</option>
+          <option value="sk-SK">🇸🇰 Slovenčina</option>
+          <option value="ro-RO">🇷🇴 Română</option>
+          <option value="hu-HU">🇭🇺 Magyar</option>
+          <option value="hr-HR">🇭🇷 Hrvatski</option>
+          <option value="uk-UA">🇺🇦 Українська</option>
+          <option value="ru-RU">🇷🇺 Русский</option>
+          <option value="el-GR">🇬🇷 Ελληνικά</option>
         </optgroup>
         <optgroup label="Moyen-Orient">
-          <option value="tr">🇹🇷 Türkçe</option>
-          <option value="ar">🇸🇦 العربية</option>
+          <option value="tr-TR">🇹🇷 Türkçe</option>
+          <option value="ar-SA">🇸🇦 العربية (Arabie)</option>
+          <option value="ar-EG">🇪🇬 العربية (Égypte)</option>
+          <option value="he-IL">🇮🇱 עברית</option>
+          <option value="fa-IR">🇮🇷 فارسی</option>
         </optgroup>
-        <optgroup label="Asie">
-          <option value="hi">🇮🇳 हिन्दी</option>
-          <option value="zh">🇨🇳 中文</option>
-          <option value="vi">🇻🇳 Tiếng Việt</option>
-          <option value="id">🇮🇩 Bahasa Indonesia</option>
+        <optgroup label="Asie du Sud">
+          <option value="hi-IN">🇮🇳 हिन्दी</option>
+          <option value="bn-BD">🇧🇩 বাংলা</option>
+          <option value="ur-PK">🇵🇰 اردو</option>
+        </optgroup>
+        <optgroup label="Asie de l'Est &amp; SEA">
+          <option value="ja-JP">🇯🇵 日本語</option>
+          <option value="ko-KR">🇰🇷 한국어</option>
+          <option value="zh-CN">🇨🇳 中文 (简体)</option>
+          <option value="zh-TW">🇹🇼 中文 (繁體)</option>
+          <option value="th-TH">🇹🇭 ภาษาไทย</option>
+          <option value="vi-VN">🇻🇳 Tiếng Việt</option>
+          <option value="id-ID">🇮🇩 Bahasa Indonesia</option>
+          <option value="ms-MY">🇲🇾 Bahasa Melayu</option>
         </optgroup>
         <optgroup label="Afrique">
-          <option value="sw">🇰🇪 Kiswahili</option>
-          <option value="af">🇿🇦 Afrikaans</option>
+          <option value="sw-KE">🇰🇪 Kiswahili</option>
+          <option value="af-ZA">🇿🇦 Afrikaans</option>
         </optgroup>
       </select>
     </div>
 
-    <!-- TTS engine status -->
-    <div class="voice-bar" id="voiceBar">
+    <!-- Voice status -->
+    <div class="voice-bar">
       <span id="vdot" class="vdot" style="color:var(--amber)">●</span>
-      <span id="vtext" class="vtext">Loading voice engine…</span>
+      <span id="vtext" class="vtext">Loading voices…</span>
     </div>
 
     <div class="grid3">
@@ -111,17 +134,17 @@
       </div>
       <div class="ctrl">
         <label for="speedIn">Speed %</label>
-        <input type="number" id="speedIn" value="130" min="80" max="200" step="10"/>
+        <input type="number" id="speedIn" value="90" min="50" max="150" step="5"/>
       </div>
     </div>
 
-    <!-- Two action buttons -->
+    <!-- Action buttons -->
     <div class="gen-row">
-      <button class="btn-primary" id="genBtn" disabled>
+      <button class="btn-primary" id="genBtn">
         <svg width="11" height="11" viewBox="0 0 11 11" fill="currentColor"><polygon points="1,0.5 10,5.5 1,10.5"/></svg>
         Play session
       </button>
-      <button class="btn-primary btn-build" id="buildBtn" disabled>
+      <button class="btn-primary btn-build" id="buildBtn">
         <svg width="12" height="12" viewBox="0 0 12 12" fill="currentColor">
           <path d="M6 8.5L2.5 5H5V1h2v4h2.5L6 8.5z"/>
           <rect x="1" y="10" width="10" height="1.5" rx=".75"/>
@@ -179,8 +202,12 @@
           <line x1="1" y1="14" x2="27" y2="14" stroke="var(--faint)" stroke-width="1"/>
         </svg>
       </div>
-      <p><strong>Play session</strong> — listen in real time.<br/><br/>
-         <strong>Build &amp; Download</strong> — generates a real<br/>WAV file, no recording needed.</p>
+      <p>
+        <strong>▶ Play session</strong><br/>Listen in real time with your browser's voices.<br/><br/>
+        <strong>⬇ Build &amp; Download</strong><br/>
+        Creates a WAV audio guide: a tone signals each repetition,<br/>
+        then silence for you to shadow. No screen capture needed.
+      </p>
       <p class="kbd-hint"><kbd>Ctrl+Enter</kbd> to play</p>
     </div>
 
@@ -211,20 +238,20 @@
         <button class="btn-secondary" id="stopBtn">Stop</button>
       </div>
 
-      <!-- Download section -->
+      <!-- Download section — shown after Build -->
       <div id="downloadWrap" class="download-wrap hidden">
         <div class="download-header">
           <svg width="14" height="14" viewBox="0 0 14 14" fill="var(--green)">
             <path d="M7 10L3 6h3V2h2v4h3L7 10z"/>
             <rect x="1" y="12" width="12" height="1.5" rx=".75"/>
           </svg>
-          Audio ready — works everywhere
+          Audio guide ready — tone cues + shadowing gaps
         </div>
         <audio id="audioPlayer" controls></audio>
         <a id="downloadBtn" class="btn-download" href="#" download="shadowing-session.wav">
           ↓ Download WAV
         </a>
-        <p class="download-note">Safari · Chrome · Firefox · iPhone · Android · VLC</p>
+        <p class="download-note">Works in Safari · Chrome · Firefox · iPhone · Android · VLC</p>
       </div>
 
       <button class="btn-link" id="resetBtn">← New session</button>
