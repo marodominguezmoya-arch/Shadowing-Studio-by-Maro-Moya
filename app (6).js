@@ -769,6 +769,91 @@ function getSourceLangCode() {
 }
 
 /* ─────────────────────────────────────────────
+   GOOGLE TTS FALLBACK
+   For languages with no browser voice (Yoruba, Swahili…)
+   we fetch real audio from Google Translate TTS via a
+   CORS proxy. No API key, no screen capture.
+───────────────────────────────────────────── */
+const NO_VOICE_LOCALES = new Set([
+  'yo-NG', // Yoruba  — no browser support
+  'sw-KE', // Swahili — rare
+  'af-ZA', // Afrikaans — rare
+  'bn-BD', // Bengali  — rare
+  'ur-PK', // Urdu     — rare
+  'fa-IR', // Persian  — rare
+]);
+
+const GTTS_CODE = {
+  'yo-NG':'yo','sw-KE':'sw','af-ZA':'af','bn-BD':'bn','ur-PK':'ur','fa-IR':'fa',
+  'es-ES':'es','es-MX':'es','es-AR':'es','es-CO':'es',
+  'en-US':'en','en-GB':'en','en-AU':'en','en-IN':'en',
+  'fr-FR':'fr','fr-CA':'fr','fr-BE':'fr',
+  'de-DE':'de','de-AT':'de','it-IT':'it',
+  'pt-PT':'pt','pt-BR':'pt','nl-NL':'nl',
+  'tr-TR':'tr','ar-SA':'ar','ar-EG':'ar',
+  'hi-IN':'hi','ja-JP':'ja','ko-KR':'ko',
+  'zh-CN':'zh-CN','zh-TW':'zh-TW',
+  'ru-RU':'ru','pl-PL':'pl','sv-SE':'sv',
+  'nb-NO':'no','da-DK':'da','fi-FI':'fi',
+  'el-GR':'el','he-IL':'iw','uk-UA':'uk',
+};
+
+/* Try multiple CORS proxies in sequence */
+const CORS_PROXIES = [
+  u => `https://corsproxy.io/?${encodeURIComponent(u)}`,
+  u => `https://api.allorigins.win/raw?url=${encodeURIComponent(u)}`,
+  u => `https://cors-anywhere.herokuapp.com/${u}`,
+];
+
+let _audioCtx = null;
+function getAudioCtx() {
+  if (!_audioCtx || _audioCtx.state === 'closed') {
+    const AC = window.AudioContext || window.webkitAudioContext;
+    _audioCtx = new AC();
+  }
+  return _audioCtx;
+}
+
+let currentGTTSSource = null;
+
+async function fetchGTTSAudio(text, locale) {
+  const lang = GTTS_CODE[locale] || locale.split('-')[0];
+  const base = `https://translate.googleapis.com/translate_tts?ie=UTF-8&q=${encodeURIComponent(text)}&tl=${lang}&client=gtx&ttsspeed=0.85`;
+  for (const proxy of CORS_PROXIES) {
+    try {
+      const res = await fetch(proxy(base), { signal: AbortSignal.timeout(9000) });
+      if (res.ok) {
+        const buf = await res.arrayBuffer();
+        if (buf.byteLength > 1000) return buf;
+      }
+    } catch (_) {}
+  }
+  throw new Error('Audio not available — check internet connection.');
+}
+
+function playAudioBuffer(buf) {
+  return new Promise((resolve, reject) => {
+    if (stopRequested) { resolve(); return; }
+    const ctx = getAudioCtx();
+    ctx.decodeAudioData(buf.slice(0), decoded => {
+      const src = ctx.createBufferSource();
+      src.buffer = decoded;
+      src.connect(ctx.destination);
+      currentGTTSSource = src;
+      src.onended = () => { currentGTTSSource = null; resolve(); };
+      src.start(0);
+    }, reject);
+  });
+}
+
+function stopGTTSPlayback() {
+  if (currentGTTSSource) {
+    try { currentGTTSSource.stop(); } catch (_) {}
+    currentGTTSSource = null;
+  }
+}
+
+/* ─────────────────────────────────────────────
    VOICE LOADING
 ───────────────────────────────────────────── */
 const VOICE_PREFS = {
@@ -821,12 +906,26 @@ function getBestVoice(locale) {
 
 function updateVoiceUI() {
   const locale = langSel.value;
-  const voice  = getBestVoice(locale);
-  if (!voice) {
-    vdot.style.color  = 'var(--amber)';
-    vtext.textContent = 'No voice found for this language in your browser.';
+
+  // Languages with no browser voice — routed to Google TTS automatically
+  if (NO_VOICE_LOCALES.has(locale)) {
+    vdot.style.color  = 'var(--accent)';
+    vtext.textContent = '🌐 Google TTS — real natural voice fetched online';
+    genBtn.disabled   = false;
+    buildBtn.disabled = false;
     return;
   }
+
+  const voice = getBestVoice(locale);
+  if (!voice) {
+    // Unknown language — still try Google TTS
+    vdot.style.color  = 'var(--accent)';
+    vtext.textContent = '🌐 No local voice — will use Google TTS online';
+    genBtn.disabled   = false;
+    buildBtn.disabled = false;
+    return;
+  }
+
   const isHigh = voice.localService || voice.name.toLowerCase().includes('google');
   vdot.style.color  = isHigh ? 'var(--green)' : 'var(--amber)';
   vtext.textContent = `${isHigh ? 'High' : 'Standard'} quality — ${voice.name.replace(/Microsoft |Google /g,'').trim()} · ${voice.lang}`;
@@ -943,7 +1042,22 @@ function updateCards(idx) {
 /* ─────────────────────────────────────────────
    SPEAK
 ───────────────────────────────────────────── */
-function speak(text, locale, voice, rate, vol = 1) {
+async function speak(text, locale, voice, rate, vol = 1) {
+  if (stopRequested) return;
+
+  // No browser voice → fetch from Google TTS and play via AudioContext
+  if (NO_VOICE_LOCALES.has(locale) || (!voice && !getBestVoice(locale))) {
+    try {
+      const buf = await fetchGTTSAudio(text, locale);
+      await playAudioBuffer(buf);
+    } catch (e) {
+      console.warn('GTTS fallback failed:', e.message);
+      // Silent fail — don't crash the session
+    }
+    return;
+  }
+
+  // Normal Web Speech API path
   return new Promise((resolve, reject) => {
     if (stopRequested) { resolve(); return; }
     if (synth.speaking || synth.pending) synth.cancel();
@@ -1168,7 +1282,9 @@ stopBtn.addEventListener('click', () => {
 });
 
 resetBtn.addEventListener('click', () => {
-  synth.cancel(); isPlaying = false; stopRequested = true;
+  synth.cancel();
+  stopGTTSPlayback();
+  isPlaying = false; stopRequested = true;
   downloadWrap.classList.add('hidden'); showState('empty');
 });
 
