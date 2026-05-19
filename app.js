@@ -512,6 +512,202 @@ const PHONETIC_RULES = {
     [/h/gi,   'j'],
   ],
 
+
+  /* ────────────────────────────────────────────
+     YORUBA → FRENCH phonetic approximation
+     Yoruba has 3 tones (high ́, low ̀, mid unmarked),
+     nasals (n, m), and unique vowels.
+     We map Yoruba orthography to French reading.
+  ──────────────────────────────────────────── */
+  'yo→fr': [
+    // Special Yoruba letters
+    [/gb/gi,  'gb'],         // labial-velar — keep as is, closest French can do
+    [/ẹ/gi,   'è'],          // open-mid e
+    [/ọ/gi,   'o'],          // open-mid o
+    [/ṣ/gi,   'ch'],         // retroflex s → French ch
+    [/s/gi,   's'],
+    // Tonal marks — strip (tone is prosodic, not segmental in spelling)
+    [/́/g,  ''],              // combining acute (high tone)
+    [/̀/g,  ''],              // combining grave (low tone)
+    [/̄/g,  ''],              // combining macron (mid tone)
+    // Vowels
+    [/ẹ/gi,   'è'],
+    [/ọ/gi,   'o'],
+    [/u/gi,   'ou'],          // u → French ou
+    [/o/gi,   'o'],
+    [/e/gi,   'é'],
+    [/i/gi,   'i'],
+    [/a/gi,   'a'],
+    // Digraphs
+    [/kp/gi,  'kp'],          // labial-velar stop
+    [/gb/gi,  'gb'],
+    [/ny/gi,  'gn'],          // palatal nasal
+    // Consonants
+    [/j/gi,   'y'],           // Yoruba j = English y
+    [/y/gi,   'y'],
+    [/w/gi,   'ou'],
+    [/r/gi,   'r'],
+    [/l/gi,   'l'],
+    [/n/gi,   'n'],
+    [/m/gi,   'm'],
+    [/k/gi,   'k'],
+    [/g/gi,   'g'],
+    [/d/gi,   'd'],
+    [/t/gi,   't'],
+    [/b/gi,   'b'],
+    [/p/gi,   'p'],
+    [/f/gi,   'f'],
+    [/h/gi,   'h'],
+    [/v/gi,   'v'],
+    [/z/gi,   'z'],
+  ],
+
+  /* ────────────────────────────────────────────
+     YORUBA → SPANISH
+  ──────────────────────────────────────────── */
+  'yo→es': [
+    [/gb/gi,  'gb'],
+    [/kp/gi,  'kp'],
+    [/ẹ/gi,   'e'],
+    [/ọ/gi,   'o'],
+    [/ṣ/gi,   'sh'],
+    [/́/g,  ''],
+    [/̀/g,  ''],
+    [/u/gi,   'u'],
+    [/o/gi,   'o'],
+    [/e/gi,   'e'],
+    [/i/gi,   'i'],
+    [/a/gi,   'a'],
+    [/j/gi,   'y'],
+    [/y/gi,   'y'],
+    [/w/gi,   'u'],
+    [/ny/gi,  'ñ'],
+    [/r/gi,   'r'],
+    [/l/gi,   'l'],
+    [/n/gi,   'n'],
+    [/m/gi,   'm'],
+    [/k/gi,   'k'],
+    [/g/gi,   'g'],
+    [/d/gi,   'd'],
+    [/t/gi,   't'],
+    [/b/gi,   'b'],
+    [/p/gi,   'p'],
+    [/f/gi,   'f'],
+    [/h/gi,   'j'],
+    [/s/gi,   's'],
+  ],
+
+  /* ────────────────────────────────────────────
+     YORUBA → ENGLISH
+  ──────────────────────────────────────────── */
+  'yo→en': [
+    [/gb/gi,  'gb'],
+    [/kp/gi,  'kp'],
+    [/ẹ/gi,   'eh'],
+    [/ọ/gi,   'aw'],
+    [/ṣ/gi,   'sh'],
+    [/́/g,  ''],
+    [/̀/g,  ''],
+    [/u/gi,   'oo'],
+    [/o/gi,   'oh'],
+    [/e/gi,   'ay'],
+    [/i/gi,   'ee'],
+    [/a/gi,   'ah'],
+    [/j/gi,   'y'],
+    [/y/gi,   'y'],
+    [/w/gi,   'w'],
+    [/ny/gi,  'ny'],
+    [/r/gi,   'r'],
+    [/l/gi,   'l'],
+    [/n/gi,   'n'],
+    [/m/gi,   'm'],
+    [/k/gi,   'k'],
+    [/g/gi,   'g'],
+    [/d/gi,   'd'],
+    [/t/gi,   't'],
+    [/b/gi,   'b'],
+    [/p/gi,   'p'],
+    [/f/gi,   'f'],
+    [/h/gi,   'h'],
+    [/s/gi,   's'],
+  ],
+
+  /* ────────────────────────────────────────────
+     FRENCH → YORUBA reading approximation
+     (how a Yoruba speaker might read French)
+  ──────────────────────────────────────────── */
+  'fr→yo': [
+    [/eau/gi,  'o'],
+    [/ou/gi,   'u'],
+    [/eu/gi,   'ẹ'],
+    [/oi/gi,   'ua'],
+    [/ai/gi,   'è'],
+    [/ei/gi,   'è'],
+    [/au/gi,   'o'],
+    [/an/gi,   'an'],
+    [/en/gi,   'an'],
+    [/in/gi,   'in'],
+    [/on/gi,   'on'],
+    [/un/gi,   'un'],
+    [/ch/gi,   'ṣ'],
+    [/gn/gi,   'ny'],
+    [/qu/gi,   'k'],
+    [/ph/gi,   'f'],
+    [/th/gi,   't'],
+    [/é/gi,    'e'],
+    [/è/gi,    'ẹ'],
+    [/ê/gi,    'ẹ'],
+    [/à/gi,    'a'],
+    [/â/gi,    'a'],
+    [/î/gi,    'i'],
+    [/ô/gi,    'o'],
+    [/û/gi,    'u'],
+    [/ù/gi,    'u'],
+    [/ü/gi,    'u'],
+    [/ï/gi,    'i'],
+    [/j/gi,    'gb'],         // French j has no exact Yoruba equiv
+    [/r/gi,    'r'],
+    [/h/gi,    ''],           // silent h
+    [/w/gi,    'u'],
+    [/x/gi,    'ks'],
+    [/z/gi,    's'],
+    [/e/gi,  ''],           // silent final e
+  ],
+
+  /* ────────────────────────────────────────────
+     ENGLISH → YORUBA reading approximation
+  ──────────────────────────────────────────── */
+  'en→yo': [
+    [/th/gi,   'd'],
+    [/sh/gi,   'ṣ'],
+    [/ch/gi,   'tṣ'],
+    [/ph/gi,   'f'],
+    [/wh/gi,   'u'],
+    [/ck/gi,   'k'],
+    [/oo/gi,   'u'],
+    [/ee/gi,   'i'],
+    [/ea/gi,   'i'],
+    [/ow/gi,   'au'],
+    [/ou/gi,   'au'],
+    [/igh/gi,  'ai'],
+    [/ay/gi,   'e'],
+    [/ai/gi,   'e'],
+    [/aw/gi,   'ọ'],
+    [/ng/gi,   'ng'],
+    [/w/gi,    'u'],
+    [/y(?=[aeiou])/gi, 'y'],
+    [/y/gi,    'i'],
+    [/j/gi,    'y'],
+    [/v/gi,    'b'],
+    [/z/gi,    's'],
+    [/x/gi,    'ks'],
+    [/c(?=[ei])/gi, 's'],
+    [/c/gi,    'k'],
+    [/g(?=[ei])/gi, 'gb'],
+    [/qu/gi,   'ku'],
+    [/r/gi,    'r'],
+    [/e/gi,  ''],
+  ],
   /* ────────────────────────────────────────────
      ENGLISH → GERMAN
   ──────────────────────────────────────────── */
@@ -596,6 +792,7 @@ const VOICE_PREFS = {
   zh:['Ting-Ting','Google 普通话','Microsoft Huihui'],
   hi:['Lekha','Google हिन्दी','Microsoft Kalpana'],
   el:['Melina','Google ελληνικά','Microsoft Stefanos'],
+  yo:['Google Yorùbá','Google yoruba'],
 };
 
 const langCode = locale => (locale || 'en').split('-')[0].toLowerCase();
