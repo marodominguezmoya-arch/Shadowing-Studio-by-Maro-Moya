@@ -882,16 +882,8 @@ const VOICE_PREFS = {
 
 const langCode = locale => (locale || 'en').split('-')[0].toLowerCase();
 
-function loadVoices() {
-  const raw = synth.getVoices();
-  if (!raw.length) return;
-  voices = [...raw].sort((a, b) => {
-    if (a.localService && !b.localService) return -1;
-    if (!a.localService && b.localService) return 1;
-    return a.name.localeCompare(b.name);
-  });
-  updateVoiceUI();
-}
+// loadVoices kept for compatibility
+function loadVoices() { tryLoadVoices(); }
 
 function getBestVoice(locale) {
   const code = langCode(locale);
@@ -907,28 +899,43 @@ function getBestVoice(locale) {
 function updateVoiceUI() {
   const locale = langSel.value;
 
-  // Languages with no browser voice — routed to Google TTS automatically
+  // Yoruba and other no-browser-voice languages → Google TTS
   if (NO_VOICE_LOCALES.has(locale)) {
-    vdot.style.color  = 'var(--accent)';
-    vtext.textContent = '🌐 Google TTS — real natural voice fetched online';
+    if (locale === 'yo-NG') {
+      vdot.style.color  = 'var(--green)';
+      vtext.textContent = '🎙️ ResponsiveVoice — real Yoruba voice (requires internet)';
+    } else {
+      vdot.style.color  = 'var(--accent)';
+      vtext.textContent = '🌐 Online voice — Google TTS (requires internet)';
+    }
     genBtn.disabled   = false;
     buildBtn.disabled = false;
     return;
   }
 
+  // Try to find a browser voice
   const voice = getBestVoice(locale);
+
   if (!voice) {
-    // Unknown language — still try Google TTS
+    // Voices may still be loading — keep waiting if no voices at all
+    if (voices.length === 0) {
+      vdot.style.color  = 'var(--amber)';
+      vtext.textContent = 'Loading voices…';
+      // Don't disable buttons — poll will call us again
+      return;
+    }
+    // Voices loaded but none for this language — GTTS fallback
     vdot.style.color  = 'var(--accent)';
-    vtext.textContent = '🌐 No local voice — will use Google TTS online';
+    vtext.textContent = '🌐 No local voice for this language — using Google TTS';
     genBtn.disabled   = false;
     buildBtn.disabled = false;
     return;
   }
 
+  // Good browser voice found
   const isHigh = voice.localService || voice.name.toLowerCase().includes('google');
   vdot.style.color  = isHigh ? 'var(--green)' : 'var(--amber)';
-  vtext.textContent = `${isHigh ? 'High' : 'Standard'} quality — ${voice.name.replace(/Microsoft |Google /g,'').trim()} · ${voice.lang}`;
+  vtext.textContent = `${isHigh ? '★ High' : '◆ Standard'} quality — ${voice.name.replace(/Microsoft |Google /g, '').trim()} · ${voice.lang}`;
   genBtn.disabled   = false;
   buildBtn.disabled = false;
 }
@@ -1045,29 +1052,56 @@ function updateCards(idx) {
 async function speak(text, locale, voice, rate, vol = 1) {
   if (stopRequested) return;
 
-  // No browser voice → fetch from Google TTS and play via AudioContext
-  if (NO_VOICE_LOCALES.has(locale) || (!voice && !getBestVoice(locale))) {
+  // ── Yoruba: use ResponsiveVoice (has a real Yoruba voice) ──────────────
+  if (locale === 'yo-NG') {
+    if (typeof responsiveVoice !== 'undefined' && responsiveVoice.voiceSupport()) {
+      return new Promise(resolve => {
+        responsiveVoice.speak(text, 'Yoruba Male', {
+          rate: rate || 0.9,
+          volume: vol,
+          onend: resolve,
+          onerror: resolve, // fail silently
+        });
+      });
+    }
+    // ResponsiveVoice not available → try GTTS
+    try { const buf = await fetchGTTSAudio(text, locale); await playAudioBuffer(buf); } catch (_) {}
+    return;
+  }
+
+  // ── Other no-voice languages: Google TTS via CORS proxy ────────────────
+  if (NO_VOICE_LOCALES.has(locale)) {
     try {
       const buf = await fetchGTTSAudio(text, locale);
       await playAudioBuffer(buf);
     } catch (e) {
-      console.warn('GTTS fallback failed:', e.message);
-      // Silent fail — don't crash the session
+      console.warn('GTTS failed:', e.message);
     }
     return;
   }
 
-  // Normal Web Speech API path
+  // ── All other languages: Web Speech API (browser voices) ───────────────
   return new Promise((resolve, reject) => {
     if (stopRequested) { resolve(); return; }
     if (synth.speaking || synth.pending) synth.cancel();
-    const utt = new SpeechSynthesisUtterance(text);
-    utt.lang = locale; utt.rate = rate || 0.9; utt.pitch = 1; utt.volume = vol;
+    const utt   = new SpeechSynthesisUtterance(text);
+    utt.lang    = locale;
+    utt.rate    = rate || 0.9;
+    utt.pitch   = 1;
+    utt.volume  = vol;
     if (voice) utt.voice = voice;
     let ka;
-    utt.onstart = () => { ka = setInterval(() => { if (synth.speaking) { synth.pause(); synth.resume(); } else clearInterval(ka); }, 10000); };
+    utt.onstart = () => {
+      ka = setInterval(() => {
+        if (synth.speaking) { synth.pause(); synth.resume(); }
+        else clearInterval(ka);
+      }, 10000);
+    };
     utt.onend   = () => { clearInterval(ka); resolve(); };
-    utt.onerror = e  => { clearInterval(ka); (e.error==='interrupted'||e.error==='canceled') ? resolve() : reject(new Error(e.error)); };
+    utt.onerror = e  => {
+      clearInterval(ka);
+      (e.error === 'interrupted' || e.error === 'canceled') ? resolve() : reject(new Error(e.error));
+    };
     setTimeout(() => synth.speak(utt), 50);
   });
 }
@@ -1296,22 +1330,68 @@ saveKeyBtn.addEventListener('click',   saveKey);
 apiKeyInput.addEventListener('keydown', e => { if (e.key==='Enter') saveKey(); });
 
 /* ─────────────────────────────────────────────
-   INIT
+   INIT — voice loading
+   Chrome: fires onvoiceschanged, may also need polling
+   Safari: voices available synchronously after load
+   Firefox: voices available synchronously
 ───────────────────────────────────────────── */
-if (synth) {
-  if (synth.onvoiceschanged !== undefined) synth.onvoiceschanged = loadVoices;
-  loadVoices();
-  setTimeout(loadVoices, 300);
-  setTimeout(loadVoices, 1000);
-  vdot.style.color  = 'var(--green)';
-  vtext.textContent = "Voice engine ready — using your browser's built-in voices";
+
+// Initial state
+vdot.style.color  = 'var(--amber)';
+vtext.textContent = 'Loading voices…';
+genBtn.disabled   = true;
+buildBtn.disabled = true;
+
+function tryLoadVoices() {
+  if (!synth) return false;
+  const raw = synth.getVoices();
+  if (raw.length === 0) return false;
+  voices = [...raw].sort((a, b) => {
+    if (a.localService && !b.localService) return -1;
+    if (!a.localService && b.localService) return 1;
+    return a.name.localeCompare(b.name);
+  });
+  updateVoiceUI(); // updates the badge and enables buttons
+  return true;
+}
+
+if (!synth) {
+  // Browser doesn't support speech at all
+  vdot.style.color  = 'var(--danger)';
+  vtext.textContent = 'Web Speech API not supported — use Chrome or Edge.';
+  // Still allow Yoruba (uses GTTS, not synth)
   genBtn.disabled   = false;
   buildBtn.disabled = false;
 } else {
-  vdot.style.color  = 'var(--danger)';
-  vtext.textContent = 'Web Speech API not supported. Please use Chrome or Edge.';
+  // Try immediately (works on Safari/Firefox)
+  const gotVoices = tryLoadVoices();
+
+  if (!gotVoices) {
+    // Chrome: hook onvoiceschanged (fires once voices are ready)
+    synth.onvoiceschanged = () => {
+      tryLoadVoices();
+      synth.onvoiceschanged = null; // fire once only
+    };
+
+    // Also poll as a safety net for browsers that don't fire the event
+    let ticks = 0;
+    const poll = setInterval(() => {
+      ticks++;
+      if (tryLoadVoices() || ticks > 50) {
+        clearInterval(poll); // stop after success or 5s timeout
+        if (ticks > 50 && voices.length === 0) {
+          // Timed out with no voices — enable GTTS fallback mode
+          vdot.style.color  = 'var(--accent)';
+          vtext.textContent = '🌐 No local voice found — online TTS will be used';
+          genBtn.disabled   = false;
+          buildBtn.disabled = false;
+        }
+      }
+    }, 100);
+  }
 }
 
+langSel.addEventListener('change', updateVoiceUI);
 loadSavedKey();
 updateCounter();
 showState('empty');
