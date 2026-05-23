@@ -775,7 +775,6 @@ function getSourceLangCode() {
    CORS proxy. No API key, no screen capture.
 ───────────────────────────────────────────── */
 const NO_VOICE_LOCALES = new Set([
-  'yo-NG', // Yoruba  — no browser support
   'sw-KE', // Swahili — rare
   'af-ZA', // Afrikaans — rare
   'bn-BD', // Bengali  — rare
@@ -784,7 +783,7 @@ const NO_VOICE_LOCALES = new Set([
 ]);
 
 const GTTS_CODE = {
-  'yo-NG':'yo','sw-KE':'sw','af-ZA':'af','bn-BD':'bn','ur-PK':'ur','fa-IR':'fa',
+'sw-KE':'sw','af-ZA':'af','bn-BD':'bn','ur-PK':'ur','fa-IR':'fa',
   'es-ES':'es','es-MX':'es','es-AR':'es','es-CO':'es',
   'en-US':'en','en-GB':'en','en-AU':'en','en-IN':'en',
   'fr-FR':'fr','fr-CA':'fr','fr-BE':'fr',
@@ -899,15 +898,19 @@ function getBestVoice(locale) {
 function updateVoiceUI() {
   const locale = langSel.value;
 
-  // Yoruba and other no-browser-voice languages → Google TTS
+  // Yoruba — Web Speech API with lang='yo'. Chrome uses Google online TTS.
+  if (locale === 'yo-NG') {
+    vdot.style.color  = 'var(--green)';
+    vtext.textContent = '🌐 Yoruba — Google online TTS via Chrome (requires internet)';
+    genBtn.disabled   = false;
+    buildBtn.disabled = false;
+    return;
+  }
+
+  // Other rare languages with no local voice → GTTS proxy
   if (NO_VOICE_LOCALES.has(locale)) {
-    if (locale === 'yo-NG') {
-      vdot.style.color  = 'var(--green)';
-      vtext.textContent = '🎙️ ResponsiveVoice — real Yoruba voice (requires internet)';
-    } else {
-      vdot.style.color  = 'var(--accent)';
-      vtext.textContent = '🌐 Online voice — Google TTS (requires internet)';
-    }
+    vdot.style.color  = 'var(--accent)';
+    vtext.textContent = '🌐 Online voice — requires internet connection';
     genBtn.disabled   = false;
     buildBtn.disabled = false;
     return;
@@ -1052,44 +1055,24 @@ function updateCards(idx) {
 async function speak(text, locale, voice, rate, vol = 1) {
   if (stopRequested) return;
 
-  // ── Yoruba: use ResponsiveVoice (has a real Yoruba voice) ──────────────
-  if (locale === 'yo-NG') {
-    if (typeof responsiveVoice !== 'undefined' && responsiveVoice.voiceSupport()) {
-      return new Promise(resolve => {
-        responsiveVoice.speak(text, 'Yoruba Male', {
-          rate: rate || 0.9,
-          volume: vol,
-          onend: resolve,
-          onerror: resolve, // fail silently
-        });
-      });
-    }
-    // ResponsiveVoice not available → try GTTS
-    try { const buf = await fetchGTTSAudio(text, locale); await playAudioBuffer(buf); } catch (_) {}
-    return;
-  }
-
-  // ── Other no-voice languages: Google TTS via CORS proxy ────────────────
-  if (NO_VOICE_LOCALES.has(locale)) {
-    try {
-      const buf = await fetchGTTSAudio(text, locale);
-      await playAudioBuffer(buf);
-    } catch (e) {
-      console.warn('GTTS failed:', e.message);
-    }
-    return;
-  }
-
-  // ── All other languages: Web Speech API (browser voices) ───────────────
+  // ── All languages including Yoruba: Web Speech API ───────────────────────
+  // For Yoruba (yo-NG): Chrome uses Google's online TTS when lang='yo' is set.
+  // We force the lang tag and let the browser handle it — no external library needed.
   return new Promise((resolve, reject) => {
     if (stopRequested) { resolve(); return; }
     if (synth.speaking || synth.pending) synth.cancel();
+
     const utt   = new SpeechSynthesisUtterance(text);
-    utt.lang    = locale;
+    // For Yoruba, use the bare 'yo' tag — Chrome recognises it and uses Google TTS
+    utt.lang    = (locale === 'yo-NG') ? 'yo' : locale;
     utt.rate    = rate || 0.9;
     utt.pitch   = 1;
     utt.volume  = vol;
-    if (voice) utt.voice = voice;
+
+    // Only assign a voice object for languages that have local voices.
+    // For Yoruba, leave utt.voice unset so the browser picks online TTS.
+    if (voice && locale !== 'yo-NG') utt.voice = voice;
+
     let ka;
     utt.onstart = () => {
       ka = setInterval(() => {
