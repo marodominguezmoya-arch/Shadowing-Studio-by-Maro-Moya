@@ -1,6 +1,0 @@
-{
-  "name": "shadowing-studio-proxy",
-  "version": "1.0.0",
-  "description": "TTS proxy for Shadowing Studio — routes Google TTS with CORS headers",
-  "private": true
-}

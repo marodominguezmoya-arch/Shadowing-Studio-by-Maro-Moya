@@ -6,7 +6,7 @@
    the URL below with your own Vercel project URL.
    Format: https://YOUR-PROJECT.vercel.app/api/tts
 ───────────────────────────────────────────── */
-const TTS_PROXY = 'https://shadowing-studio-proxy.vercel.app/api/tts';
+const TTS_PROXY = 'https://zingy-alpaca-23be20.netlify.app/.netlify/functions/tts';
 
 const $ = id => document.getElementById(id);
 
