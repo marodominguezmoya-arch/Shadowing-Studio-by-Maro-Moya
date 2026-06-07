@@ -1,5 +1,13 @@
 'use strict';
 
+/* ─────────────────────────────────────────────
+   TTS PROXY URL
+   After deploying the proxy to Vercel, replace
+   the URL below with your own Vercel project URL.
+   Format: https://YOUR-PROJECT.vercel.app/api/tts
+───────────────────────────────────────────── */
+const TTS_PROXY = 'https://shadowing-studio-proxy.vercel.app/api/tts';
+
 const $ = id => document.getElementById(id);
 
 /* ── DOM ── */
@@ -830,6 +838,20 @@ async function fetchGTTSAudio(text, locale) {
   throw new Error('Audio not available — check internet connection.');
 }
 
+/**
+ * Fetch real speech audio from our Vercel proxy.
+ * Returns an ArrayBuffer (MP3 data).
+ */
+async function fetchRealTTS(text, locale, speed) {
+  const lang  = GTTS_CODE[locale] || locale.split('-')[0];
+  const url   = `${TTS_PROXY}?text=${encodeURIComponent(text)}&lang=${encodeURIComponent(lang)}&speed=${speed || 0.85}`;
+  const res   = await fetch(url, { signal: AbortSignal.timeout(12000) });
+  if (!res.ok) throw new Error(`Proxy returned ${res.status}`);
+  const buf = await res.arrayBuffer();
+  if (buf.byteLength < 1000) throw new Error('Audio too short — proxy may be unavailable');
+  return buf;
+}
+
 function playAudioBuffer(buf) {
   return new Promise((resolve, reject) => {
     if (stopRequested) { resolve(); return; }
@@ -1130,55 +1152,126 @@ async function runPlaySession(phrases, locale, voice, rate) {
    BUILD & DOWNLOAD
 ───────────────────────────────────────────── */
 async function runBuildSession(phrases, locale, voice, rate) {
-  showState('loading'); progressFill.style.width = '0%';
-  loadingMsg.textContent = 'Measuring phrase durations…';
-  loadingSub.textContent = `${phrases.length} phrase${phrases.length>1?'s':''} × ${reps} reps · ${pauseSec}s pause`;
+  showState('loading');
+  progressFill.style.width = '0%';
+  loadingMsg.textContent   = 'Fetching audio from TTS…';
+  loadingSub.textContent   = `${phrases.length} phrase${phrases.length > 1 ? 's' : ''} × ${reps} reps · ${pauseSec}s pause`;
   downloadWrap.classList.add('hidden');
 
+  // Check proxy is configured
+  if (TTS_PROXY.includes('YOUR-PROJECT')) {
+    errorText.innerHTML = 'Proxy not configured. See README for setup instructions.';
+    showState('error');
+    return;
+  }
+
   try {
-    const durations = [];
-    for (let pi = 0; pi < phrases.length; pi++) {
-      if (stopRequested) { showState('empty'); return; }
-      loadingMsg.textContent = `Timing phrase ${pi+1}/${phrases.length}…`;
-      durations.push(await measureSpeechDuration(phrases[pi], locale, voice, rate));
-      progressFill.style.width = Math.round(((pi+1)/phrases.length)*50)+'%';
-      await sleep(100);
-    }
+    const AudioCtx = window.AudioContext || window.webkitAudioContext;
+    const actx     = new AudioCtx();
+    const SR       = actx.sampleRate;
+    const allPCM   = [];
+    const total    = phrases.length * reps;
+    let   done     = 0;
 
-    loadingMsg.textContent = 'Building audio file…';
-    const segments = [];
-    const freqs    = [523,587,659,698,784];
-    segments.push({ type:'silence', duration:0.5 });
+    // Silence chunk
+    const silencePCM = sec => new Float32Array(Math.floor(SR * sec));
 
-    for (let pi = 0; pi < phrases.length; pi++) {
-      for (let ri = 0; ri < reps; ri++) {
-        segments.push({ type:'tone', duration:0.18, freq:freqs[pi%freqs.length], amp:0.3 });
-        segments.push({ type:'silence', duration:0.08 });
-        segments.push({ type:'speech_silence', duration:durations[pi]+0.3 });
-        if (ri < reps-1) segments.push({ type:'silence', duration:pauseSec });
+    // Decode MP3 ArrayBuffer → mono Float32 PCM
+    async function mp3ToPCM(buf) {
+      const decoded = await actx.decodeAudioData(buf.slice(0));
+      const ch  = decoded.numberOfChannels;
+      const len = decoded.length;
+      const out = new Float32Array(len);
+      for (let c = 0; c < ch; c++) {
+        const d = decoded.getChannelData(c);
+        for (let i = 0; i < len; i++) out[i] += d[i] / ch;
       }
-      segments.push({ type:'silence', duration:pauseSec+0.5 });
-      progressFill.style.width = Math.round(50+((pi+1)/phrases.length)*45)+'%';
-      await sleep(0);
+      return out;
     }
-    segments.push({ type:'silence', duration:1.0 });
 
-    const wavBuf = buildWAV(segments);
-    const blob   = new Blob([wavBuf], { type:'audio/wav' });
+    // Encode Float32 PCM → WAV ArrayBuffer
+    function pcmToWAV(pcm, sr) {
+      const buf  = new ArrayBuffer(44 + pcm.length * 2);
+      const view = new DataView(buf);
+      const wr   = (off, str) => { for (let i = 0; i < str.length; i++) view.setUint8(off + i, str.charCodeAt(i)); };
+      wr(0, 'RIFF'); view.setUint32(4, 36 + pcm.length * 2, true);
+      wr(8, 'WAVE'); wr(12, 'fmt ');
+      view.setUint32(16, 16, true); view.setUint16(20, 1, true);
+      view.setUint16(22, 1, true);  view.setUint32(24, sr, true);
+      view.setUint32(28, sr * 2, true); view.setUint16(32, 2, true);
+      view.setUint16(34, 16, true); wr(36, 'data');
+      view.setUint32(40, pcm.length * 2, true);
+      let off = 44;
+      for (let i = 0; i < pcm.length; i++) {
+        const s = Math.max(-1, Math.min(1, pcm[i]));
+        view.setInt16(off, s < 0 ? s * 0x8000 : s * 0x7FFF, true);
+        off += 2;
+      }
+      return buf;
+    }
+
+    allPCM.push(silencePCM(0.4)); // opening silence
+
+    for (let pi = 0; pi < phrases.length; pi++) {
+      if (stopRequested) break;
+      loadingMsg.textContent = `Fetching phrase ${pi + 1} / ${phrases.length}…`;
+
+      // Fetch real voice audio once, reuse for all reps
+      let phrasePCM;
+      try {
+        const mp3Buf = await fetchRealTTS(phrases[pi], locale, rate || 0.85);
+        phrasePCM    = await mp3ToPCM(mp3Buf);
+      } catch (e) {
+        console.warn('TTS fetch failed:', e.message);
+        phrasePCM = silencePCM(2); // 2s silent placeholder
+      }
+
+      for (let ri = 0; ri < reps; ri++) {
+        if (stopRequested) break;
+        allPCM.push(phrasePCM);           // real voice
+        allPCM.push(silencePCM(pauseSec)); // pause
+        done++;
+        progressFill.style.width = Math.round((done / total) * 90) + '%';
+        loadingMsg.textContent   = `Building: phrase ${pi + 1}/${phrases.length} · rep ${ri + 1}/${reps}`;
+        await sleep(0); // yield to browser
+      }
+
+      allPCM.push(silencePCM(0.6)); // gap between phrases
+    }
+
+    actx.close();
+    if (!allPCM.length || stopRequested) { showState('empty'); return; }
+
+    loadingMsg.textContent = 'Encoding WAV file…';
+    await sleep(30);
+
+    // Merge all PCM chunks
+    const totalLen = allPCM.reduce((a, c) => a + c.length, 0);
+    const merged   = new Float32Array(totalLen);
+    let   offset   = 0;
+    for (const chunk of allPCM) { merged.set(chunk, offset); offset += chunk.length; }
+
+    // Encode to WAV and offer download
+    const wavBuf = pcmToWAV(merged, SR);
+    const blob   = new Blob([wavBuf], { type: 'audio/wav' });
     const url    = URL.createObjectURL(blob);
-    audioPlayer.src = url;
-    downloadBtn.href = url;
-    downloadBtn.download = `shadowing-${langSel.value}-${reps}reps.wav`;
-    progressFill.style.width = '100%';
-    await sleep(200);
 
-    showState('result'); buildCards(phrases);
-    npPhrase.textContent = '✓ Audio file ready!'; npPhonetic.textContent = '';
-    npMeta.textContent   = `Tone cues + ${reps} rep gaps · ${pauseSec}s pauses`;
+    audioPlayer.src      = url;
+    downloadBtn.href     = url;
+    downloadBtn.download = `shadowing-${locale}-${reps}reps.wav`;
+    progressFill.style.width = '100%';
+    await sleep(150);
+
+    showState('result');
+    buildCards(phrases);
+    npPhrase.textContent   = '✓ Audio ready — real voices!';
+    npPhonetic.textContent = '';
+    npMeta.textContent     = `${phrases.length} phrase${phrases.length > 1 ? 's' : ''} · ${reps} reps · ${pauseSec}s pause`;
     downloadWrap.classList.remove('hidden');
 
   } catch (err) {
-    errorText.textContent = `Build failed: ${err.message}`; showState('error');
+    errorText.textContent = `Build failed: ${err.message}`;
+    showState('error');
   }
 }
 
