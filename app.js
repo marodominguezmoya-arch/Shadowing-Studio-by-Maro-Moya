@@ -817,35 +817,82 @@ function getAudioCtx() {
 
 let currentGTTSSource = null;
 
-async function fetchGTTSAudio(text, locale) {
-  const lang = GTTS_CODE[locale] || locale.split('-')[0];
+/**
+ * Google Translate TTS has a ~200 character limit per request.
+ * Longer phrases get silently truncated or rejected.
+ * We split long text into chunks at sentence/word boundaries.
+ */
+function splitForTTS(text, maxLen = 180) {
+  if (text.length <= maxLen) return [text];
+  const chunks = [];
+  let remaining = text.trim();
+  while (remaining.length > maxLen) {
+    let cut = remaining.lastIndexOf(' ', maxLen);
+    if (cut <= 0) cut = maxLen;
+    chunks.push(remaining.slice(0, cut).trim());
+    remaining = remaining.slice(cut).trim();
+  }
+  if (remaining) chunks.push(remaining);
+  return chunks;
+}
+
+/**
+ * Fetch one chunk of audio through CORS proxies.
+ * Retries each proxy up to 2 times before moving to the next.
+ */
+async function fetchOneChunk(text, lang) {
   const base = `https://translate.googleapis.com/translate_tts?ie=UTF-8&q=${encodeURIComponent(text)}&tl=${lang}&client=gtx&ttsspeed=0.85`;
 
   let lastError = null;
   for (const proxy of CORS_PROXIES) {
-    try {
-      const res = await fetch(proxy(base), { signal: AbortSignal.timeout(10000) });
-      if (res.ok) {
-        const buf = await res.arrayBuffer();
-        if (buf.byteLength > 1000) return buf;
-        lastError = new Error('Empty audio response');
-      } else {
-        lastError = new Error(`Proxy returned ${res.status}`);
+    for (let attempt = 0; attempt < 2; attempt++) {
+      try {
+        const res = await fetch(proxy(base), { signal: AbortSignal.timeout(12000) });
+        if (res.ok) {
+          const buf = await res.arrayBuffer();
+          // A valid MP3 from Google TTS is always > 2000 bytes for real speech
+          if (buf.byteLength > 2000) return buf;
+          lastError = new Error(`Audio too small (${buf.byteLength} bytes)`);
+        } else {
+          lastError = new Error(`HTTP ${res.status}`);
+        }
+      } catch (e) {
+        lastError = e;
       }
-    } catch (e) {
-      lastError = e;
+      await new Promise(r => setTimeout(r, 300)); // brief delay before retry
     }
   }
-  throw new Error(lastError?.message || 'Audio not available — check internet connection.');
+  throw new Error(lastError?.message || 'No proxy responded');
+}
+
+/**
+ * Fetch full audio for a phrase, splitting long text into chunks
+ * and fetching each chunk, to be concatenated by the caller.
+ * Returns an array of ArrayBuffers (one per chunk).
+ */
+async function fetchGTTSAudioChunks(text, locale) {
+  const lang   = GTTS_CODE[locale] || locale.split('-')[0];
+  const pieces = splitForTTS(text);
+  const buffers = [];
+  for (const piece of pieces) {
+    const buf = await fetchOneChunk(piece, lang);
+    buffers.push(buf);
+  }
+  return buffers;
+}
+
+/** Back-compat single-buffer fetch (used by live Play mode fallback) */
+async function fetchGTTSAudio(text, locale) {
+  const chunks = await fetchGTTSAudioChunks(text, locale);
+  return chunks[0]; // first chunk is enough for short live playback
 }
 
 /**
  * Fetch real speech audio for Build & Download.
- * Uses public CORS proxies to reach Google Translate TTS directly —
- * no custom backend needed, no deployment to maintain.
+ * Returns an array of ArrayBuffers (MP3 chunks) to decode and concatenate.
  */
 async function fetchRealTTS(text, locale, speed) {
-  return await fetchGTTSAudio(text, locale);
+  return await fetchGTTSAudioChunks(text, locale);
 }
 
 function playAudioBuffer(buf) {
@@ -1161,6 +1208,7 @@ async function runBuildSession(phrases, locale, voice, rate) {
     const allPCM   = [];
     const total    = phrases.length * reps;
     let   done     = 0;
+    let   failedPhrases = [];
 
     // Silence chunk
     const silencePCM = sec => new Float32Array(Math.floor(SR * sec));
@@ -1175,6 +1223,24 @@ async function runBuildSession(phrases, locale, voice, rate) {
         const d = decoded.getChannelData(c);
         for (let i = 0; i < len; i++) out[i] += d[i] / ch;
       }
+      return out;
+    }
+
+    /**
+     * Fetch all chunks for a phrase, decode each, and concatenate
+     * into one continuous PCM buffer for that phrase.
+     */
+    async function buildPhrasePCM(text) {
+      const mp3Chunks = await fetchRealTTS(text, locale, rate || 0.85);
+      const pcmChunks = [];
+      for (const mp3 of mp3Chunks) {
+        pcmChunks.push(await mp3ToPCM(mp3));
+        pcmChunks.push(silencePCM(0.12)); // tiny gap between chunks of same phrase
+      }
+      const len = pcmChunks.reduce((a, c) => a + c.length, 0);
+      const out = new Float32Array(len);
+      let off = 0;
+      for (const c of pcmChunks) { out.set(c, off); off += c.length; }
       return out;
     }
 
@@ -1206,18 +1272,34 @@ async function runBuildSession(phrases, locale, voice, rate) {
       loadingMsg.textContent = `Fetching phrase ${pi + 1} / ${phrases.length}…`;
 
       // Fetch real voice audio once, reuse for all reps
-      let phrasePCM;
-      try {
-        const mp3Buf = await fetchRealTTS(phrases[pi], locale, rate || 0.85);
-        phrasePCM    = await mp3ToPCM(mp3Buf);
-      } catch (e) {
-        console.warn('TTS fetch failed:', e.message);
-        phrasePCM = silencePCM(2); // 2s silent placeholder
+      let phrasePCM = null;
+      let lastErr    = null;
+
+      // Try up to 2 full attempts before giving up on this phrase
+      for (let attempt = 0; attempt < 2 && !phrasePCM; attempt++) {
+        try {
+          phrasePCM = await buildPhrasePCM(phrases[pi]);
+        } catch (e) {
+          lastErr = e;
+          console.warn(`Attempt ${attempt + 1} failed for "${phrases[pi]}":`, e.message);
+        }
+      }
+
+      if (!phrasePCM) {
+        // Real failure — track it and use a clearly audible marker (not silent!)
+        failedPhrases.push(phrases[pi]);
+        console.error(`Could not fetch audio for "${phrases[pi]}":`, lastErr?.message);
+        // Use a short buzzer tone so the gap is audible/obvious, not mistaken for a pause
+        const buzzLen = Math.floor(SR * 0.5);
+        phrasePCM = new Float32Array(buzzLen);
+        for (let i = 0; i < buzzLen; i++) {
+          phrasePCM[i] = Math.sin(2 * Math.PI * 220 * (i / SR)) * 0.25;
+        }
       }
 
       for (let ri = 0; ri < reps; ri++) {
         if (stopRequested) break;
-        allPCM.push(phrasePCM);           // real voice
+        allPCM.push(phrasePCM);            // real voice (or buzz if failed)
         allPCM.push(silencePCM(pauseSec)); // pause
         done++;
         progressFill.style.width = Math.round((done / total) * 90) + '%';
@@ -1253,9 +1335,15 @@ async function runBuildSession(phrases, locale, voice, rate) {
 
     showState('result');
     buildCards(phrases);
-    npPhrase.textContent   = '✓ Audio ready — real voices!';
+
+    if (failedPhrases.length === 0) {
+      npPhrase.textContent   = '✓ Audio ready — real voices!';
+      npMeta.textContent     = `${phrases.length} phrase${phrases.length > 1 ? 's' : ''} · ${reps} reps · ${pauseSec}s pause`;
+    } else {
+      npPhrase.textContent   = `⚠️ ${failedPhrases.length} phrase(s) failed to load`;
+      npMeta.textContent     = `Listen for the beep tone where audio is missing — try Build again, or check your connection.`;
+    }
     npPhonetic.textContent = '';
-    npMeta.textContent     = `${phrases.length} phrase${phrases.length > 1 ? 's' : ''} · ${reps} reps · ${pauseSec}s pause`;
     downloadWrap.classList.remove('hidden');
 
   } catch (err) {
