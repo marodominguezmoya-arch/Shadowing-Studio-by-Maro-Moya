@@ -1,13 +1,5 @@
 'use strict';
 
-/* ─────────────────────────────────────────────
-   TTS PROXY URL
-   After deploying the proxy to Vercel, replace
-   the URL below with your own Vercel project URL.
-   Format: https://YOUR-PROJECT.vercel.app/api/tts
-───────────────────────────────────────────── */
-const TTS_PROXY = 'https://zingy-alpaca-23be20.netlify.app/.netlify/functions/tts';
-
 const $ = id => document.getElementById(id);
 
 /* ── DOM ── */
@@ -805,11 +797,13 @@ const GTTS_CODE = {
   'el-GR':'el','he-IL':'iw','uk-UA':'uk',
 };
 
-/* Try multiple CORS proxies in sequence */
+/* Public CORS proxies — tried in order until one works.
+   No backend to deploy or maintain. */
 const CORS_PROXIES = [
-  u => `https://corsproxy.io/?${encodeURIComponent(u)}`,
   u => `https://api.allorigins.win/raw?url=${encodeURIComponent(u)}`,
-  u => `https://cors-anywhere.herokuapp.com/${u}`,
+  u => `https://corsproxy.io/?${encodeURIComponent(u)}`,
+  u => `https://thingproxy.freeboard.io/fetch/${u}`,
+  u => `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(u)}`,
 ];
 
 let _audioCtx = null;
@@ -826,30 +820,32 @@ let currentGTTSSource = null;
 async function fetchGTTSAudio(text, locale) {
   const lang = GTTS_CODE[locale] || locale.split('-')[0];
   const base = `https://translate.googleapis.com/translate_tts?ie=UTF-8&q=${encodeURIComponent(text)}&tl=${lang}&client=gtx&ttsspeed=0.85`;
+
+  let lastError = null;
   for (const proxy of CORS_PROXIES) {
     try {
-      const res = await fetch(proxy(base), { signal: AbortSignal.timeout(9000) });
+      const res = await fetch(proxy(base), { signal: AbortSignal.timeout(10000) });
       if (res.ok) {
         const buf = await res.arrayBuffer();
         if (buf.byteLength > 1000) return buf;
+        lastError = new Error('Empty audio response');
+      } else {
+        lastError = new Error(`Proxy returned ${res.status}`);
       }
-    } catch (_) {}
+    } catch (e) {
+      lastError = e;
+    }
   }
-  throw new Error('Audio not available — check internet connection.');
+  throw new Error(lastError?.message || 'Audio not available — check internet connection.');
 }
 
 /**
- * Fetch real speech audio from our Vercel proxy.
- * Returns an ArrayBuffer (MP3 data).
+ * Fetch real speech audio for Build & Download.
+ * Uses public CORS proxies to reach Google Translate TTS directly —
+ * no custom backend needed, no deployment to maintain.
  */
 async function fetchRealTTS(text, locale, speed) {
-  const lang  = GTTS_CODE[locale] || locale.split('-')[0];
-  const url   = `${TTS_PROXY}?text=${encodeURIComponent(text)}&lang=${encodeURIComponent(lang)}&speed=${speed || 0.85}`;
-  const res   = await fetch(url, { signal: AbortSignal.timeout(12000) });
-  if (!res.ok) throw new Error(`Proxy returned ${res.status}`);
-  const buf = await res.arrayBuffer();
-  if (buf.byteLength < 1000) throw new Error('Audio too short — proxy may be unavailable');
-  return buf;
+  return await fetchGTTSAudio(text, locale);
 }
 
 function playAudioBuffer(buf) {
@@ -1154,16 +1150,9 @@ async function runPlaySession(phrases, locale, voice, rate) {
 async function runBuildSession(phrases, locale, voice, rate) {
   showState('loading');
   progressFill.style.width = '0%';
-  loadingMsg.textContent   = 'Fetching audio from TTS…';
+  loadingMsg.textContent   = 'Fetching audio…';
   loadingSub.textContent   = `${phrases.length} phrase${phrases.length > 1 ? 's' : ''} × ${reps} reps · ${pauseSec}s pause`;
   downloadWrap.classList.add('hidden');
-
-  // Check proxy is configured
-  if (TTS_PROXY.includes('YOUR-PROJECT')) {
-    errorText.innerHTML = 'Proxy not configured. See README for setup instructions.';
-    showState('error');
-    return;
-  }
 
   try {
     const AudioCtx = window.AudioContext || window.webkitAudioContext;
